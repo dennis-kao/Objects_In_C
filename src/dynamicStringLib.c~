@@ -1,0 +1,692 @@
+/*dynamic string library*/
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+
+#include "token.h"
+#include "storedList.h"
+#include "dynamicStringLib.h"
+
+char *smartAppend(char *appendToThis, char *addThis) {
+  
+  int a;
+  int b;
+  
+  if (appendToThis == NULL) b = 0;
+  else b = strlen(appendToThis);
+  
+  if (addThis == NULL) a = 0;
+  else a = strlen(addThis);
+  
+  if (addThis == NULL && appendToThis == NULL) return NULL;
+
+  appendToThis = realloc(appendToThis, sizeof(char) * (a+b) );
+  
+  if (appendToThis == NULL) {
+    printf("Error: Could not append strings\n");
+    exit(1);
+  }
+
+  strcat(appendToThis, addThis);
+
+  return appendToThis;
+}
+
+void storeText(FILE *input, textInfo *code) {
+
+  char line[510];
+  char **theText = NULL;
+
+  if (fgets(line, 509, input) == NULL) exit(1);
+  
+  code->numLines = 0;
+
+  for (int i = 0; !feof(input); i++) {
+
+    theText = realloc(theText, sizeof(char *) * i+1);
+
+    if (theText == NULL) {
+      printf("Could not allocate memory to store text info\n");
+      exit(1);
+    }
+
+    theText[i] = malloc(sizeof (char) * strlen(line));
+
+    strcpy(theText[i], line);
+    
+    code->numLines++;
+
+    fgets(line, 509, input);
+  }
+
+  code->theText = theText;
+}
+
+void freeStoredText(textInfo *code) {
+
+  for (int i = 0; i < code->numLines; i++) {
+    free(code->theText[i]);
+  }
+
+  free(code);
+}
+
+char *changeToTokenizedFormat(char *formatMe) {
+  
+  char *formatted = NULL;
+  char line[510];
+  FILE *output = fopen("intermediateFiles/formattedTokenHolder.txt", "w"); /*wipe em clean boys*/
+  FILE *input = fopen("intermediateFiles/tokenHolder.txt", "w");           /*this one too*/
+  
+  if (output == NULL) {
+    printf("Could not create formattedTokenHolder file\n");
+    exit(1);
+  }
+  
+  if (input == NULL) {
+    printf("Could not tokenHolder file\n");
+    exit(1);
+  }
+  
+  fputs(formatMe, input); /*populate file with code*/
+  
+  input = freopen("intermediateFiles/tokenHolder.txt", "r", input); /*read the code*/
+  
+  if (input == NULL) {
+    printf("Could not read tokenHolder file\n");
+    exit(1);
+  }
+  
+  tokenizeFile(input, output); /*do the token, do the token dance*/
+  
+  fclose(input);
+  
+  output = freopen("intermediateFiles/formattedTokenHolder.txt", "r", output);
+  
+  if (output == NULL) {
+    printf("Could not read formattedTokenHolder file\n");
+    exit(1);
+  }
+  
+  fgets(line, 509, output);
+  
+  for (int i = 0; !feof(output); i++) { /*append all text to formatMe*/
+    formatted = smartAppend(formatted, line);
+    fgets(line, 509, output);
+  }
+  
+  fclose(output);
+  
+  return formatted;
+}
+
+void insertText(char *insertMe, textInfo *code, int insertHereIndex) {
+  
+  code->theText = realloc(code->theText, sizeof(char*) * (code->numLines+1)); /*add one more line*/
+  
+  if (code->theText == NULL) {
+    printf("Error for adding 1 more line for code\n");
+    exit(1);
+  }
+  
+  code->theText[code->numLines] = NULL; /*set the newly created pointer to null*/
+  code->numLines++;
+  
+  /* moves text from specified index 1 line down*/
+  for (int i = code->numLines - 1; i > insertHereIndex; i--) {
+    
+    code->theText[i] = realloc(code->theText[i], sizeof(char) * strlen(code->theText[i-1]));
+    
+    if (code->theText[i] == NULL) {
+      printf("Could not resize chars in string\n");
+      exit(1);
+    }
+    
+    strcpy(code->theText[i], code->theText[i-1]);
+  }
+  
+  code->theText[insertHereIndex] = realloc(code->theText[insertHereIndex], sizeof(char) * strlen(insertMe));
+  
+  if (code->theText[insertHereIndex] == NULL) {
+    printf("Could not resize chars in string\n");
+    exit(1);
+  }
+  
+  strcpy(code->theText[insertHereIndex], insertMe);
+}
+
+void deleteText(textInfo *code, int deleteHereIndex) {
+  
+  for (int i = deleteHereIndex; i < code->numLines - 1; i++) {
+    
+    code->theText[i] = realloc(code->theText[i], sizeof(char) * strlen(code->theText[i+1]));
+    
+    if (code->theText[i] == NULL) {
+      printf("Could not resize chars in string\n");
+      exit(1);
+    }
+    
+    strcpy(code->theText[i], code->theText[i+1]);
+  }
+  
+  code->theText = realloc(code->theText, sizeof(char*) * (code->numLines-1));
+  
+  if (code->theText == NULL) {
+    printf("Error removing 1 line of code\n");
+    exit(1);
+  }
+  
+  code->numLines--;
+}
+
+char *saveCode(textInfo *code, int start, int end) {
+  
+  char *savedText = NULL;
+  
+  if (start > (code->numLines-1) || end > (code->numLines-1)) {
+    printf("Error: Attempting to save code with indexes greater than the number of lines in the text\n");
+    exit(1);
+  }
+  
+  for (int i = start; i <= end; i++) {
+    
+    savedText = smartAppend(savedText, code->theText[i]);
+  }
+  
+  return savedText;
+}
+
+int indexOfClosingBracket(textInfo *code, int openBracketIndex) {
+  
+  int bracketCounter = 1;
+  
+  for (int i = openBracketIndex+1; i < code->numLines; i++) {
+    
+    if (code->theText[i][0] == '{') bracketCounter++;
+    else if (code->theText[i][0] == '}') bracketCounter--;
+    
+    if (bracketCounter == 0) return i;
+  }
+  
+  /* return statement in loop did not execute*/
+  printf("Could not determine the closing bracket index!\n");
+  exit(1);
+}
+
+void printToFile(textInfo *code, FILE *output) {
+  
+  for (int i = 0; i < code->numLines; i++) {
+    
+    fputs(code->theText[i], output);
+  }
+}
+
+void insertFormatted (char *insertMe, textInfo *code, int insertHereIndex) {
+  
+  FILE *temp = fopen("intermediateFiles/insertFormatted.txt", "w");
+  char *tokenized = changeToTokenizedFormat(insertMe);
+  
+  insertText(tokenized, code, insertHereIndex);
+  
+  free(tokenized);
+  
+  printToFile(code, temp);
+  
+  fclose(temp);
+  
+  temp = fopen("intermediateFiles/insertFormatted.txt", "r");
+  
+  for (int i = 0; i < code->numLines; i++) {
+    free(code->theText[i]);
+  }
+  
+  storeText(temp, code);
+  
+  fclose(temp);
+}
+
+void insert (char *insertMe, textInfo *code, int insertHereIndex) {
+  
+  FILE *temp = fopen("intermediateFiles/insertFormatted.txt", "w");
+  char *tokenized = insertMe;
+  
+  insertText(tokenized, code, insertHereIndex);
+  
+  printToFile(code, temp);
+  
+  fclose(temp);
+  
+  temp = fopen("intermediateFiles/insertFormatted.txt", "r");
+  
+  for (int i = 0; i < code->numLines; i++) {
+    free(code->theText[i]);
+  }
+  
+  storeText(temp, code);
+  
+  fclose(temp);
+}
+
+int nextKeyword(int i, textInfo *code) {
+  
+  do {
+    i++;
+    if (i >= code->numLines) return code->numLines;
+  }while (isspace(code->theText[i][0]) || code->theText[i][0] == '/');
+  
+  return i;
+}
+
+int openBracketIndex (int i, textInfo *code) {
+  
+  do {
+    i++;
+    if (i > code->numLines) return code->numLines;
+  }while (code->theText[i][0] != '{');
+  
+  return i;
+}
+
+int parseDataType(int i, char type[510], textInfo *code) {
+  
+  /*  parses data type*/
+  if (strcmp(code->theText[i], "long\n") == 0 || strcmp(code->theText[i], "signed\n") == 0 || strcmp(code->theText[i], "unsigned\n") == 0) {
+    
+    strcpy(type, code->theText[i]);
+    
+    /*  grab the second word for the type*/
+    i = nextKeyword(i, code);
+    
+    strcat(type, code->theText[i]);
+    
+    i = nextKeyword(i, code);
+  }
+  
+  else {
+    
+    strcpy(type, code->theText[i]);
+    
+    i = nextKeyword(i, code);
+  }
+  
+  type[strlen(type)-1] = '\0'; /*get rid of newline at the end of the string from parsing*/
+  
+  /* replaces newlines with spaces*/
+  for (int j = 0; j < strlen(type); j++) {
+    if (type[j] == '\0') break;
+    if (type[j] == '\n') type[j] = ' ';
+  }
+  
+  return i;
+}
+
+int starCounter(int *i, textInfo *code) {
+  
+  int starCounter = 0;
+  
+  while (code->theText[*i][0] == '*') {
+    starCounter++;
+    *i = nextKeyword(*i, code);
+  }
+  
+  return starCounter;
+}
+
+void deleteLines(textInfo *code, int start, int end) {
+  
+  if (end < start) {
+    printf("End is less than start\n");
+    exit(1);
+  }
+  else if (start == end) {
+    deleteText(code, start);
+  }
+  else {
+    for (int i = end; i >= start; i--) {
+      
+      deleteText(code, i);
+    }
+  }
+}
+
+void appendParameters(localFun *newFun, char *functionPointer) {
+  
+  localVar *temp = newFun->parameterList;
+  
+  while (temp != NULL) {
+    
+    char parameterChar[2];
+    int i = 0;
+    
+    parameterChar[0] = temp->varType[0];
+    parameterChar[1] = '\0';
+    
+    strcat(functionPointer, parameterChar);
+    
+    while (temp->varType[i] != ' ') {
+      if (temp->varType[i] == '\0') break;
+      i++;
+    }
+    
+    if (temp->varType[i] == ' ') {
+      parameterChar[0] = temp->varType[i+1];
+      parameterChar[1] = '\0';
+      strcat(functionPointer, parameterChar);
+    }
+    
+    temp = temp->next;
+  }
+}
+
+void functionName(localFun *newFun, char *funName, structInfo *newStruct) {
+  
+  strcpy(funName, newStruct->structName);
+  strcat(funName, newFun->funName);
+  appendParameters(newFun, funName);
+}
+
+void createFunctionPointer(localFun *newFun, char functionPointer[510], structInfo *newStruct) {
+  
+  localVar *tempParam = newFun->parameterList;
+  
+  strcpy(functionPointer, newFun->returnType);
+  
+  for (int j = 0; j < newFun->star; j++) {
+    strcat(functionPointer, "*");
+  }
+  
+  strcat(functionPointer, " (*");
+  
+  strcat(functionPointer, newStruct->structName);
+  strcat(functionPointer, newFun->funName);
+  
+  appendParameters(newFun, functionPointer);
+  
+  strcat(functionPointer, ") (");
+  
+  /*  append data types*/
+  while (tempParam != NULL) {
+    strcat(functionPointer, tempParam->varType);
+    if (tempParam->next != NULL) strcat(functionPointer, ", ");
+    tempParam = tempParam->next;
+  }
+  
+  strcat(functionPointer, ");");
+}
+
+char *constructor (structInfo *newstruct) {
+  
+  char *newConstruct = NULL;
+  localFun *tempFun = newstruct->funList;
+  
+  newConstruct = smartAppend(newConstruct, "void Constructor");
+  newConstruct = smartAppend(newConstruct, newstruct->structName);
+  newConstruct = smartAppend(newConstruct, " (struct ");
+  newConstruct = smartAppend(newConstruct, newstruct->structName);
+  newConstruct = smartAppend(newConstruct, "* newStruct) {");
+  
+  for (; tempFun != NULL; tempFun = tempFun->next) {
+    char name[200];
+    
+    newConstruct = smartAppend(newConstruct, "\n\tnewStruct->");
+    
+    strcpy(name, newstruct->structName);
+    strcat(name, tempFun->funName);
+    appendParameters(tempFun, name);
+    
+    newConstruct = smartAppend(newConstruct, name);
+    
+    newConstruct = smartAppend(newConstruct, " = &");
+    
+    newConstruct = smartAppend(newConstruct, name);
+    
+    newConstruct = smartAppend(newConstruct, ";");
+  }
+  
+  newConstruct = smartAppend(newConstruct, "\n}");
+  
+//  printf("new construct: %s\n", newConstruct);
+  
+  return newConstruct;
+}
+
+/*  adds information to the appropriate data structures*/
+/*  replaces functions with function pointers*/
+/*  renames functions*/
+void parseStruct(textInfo *code, int openBracket, int closingBracket, structInfo *newStruct) {
+  
+  char name[510];
+  char type[510];
+  int i = openBracket;
+  int startOfFunction;
+  int endOfFunction;
+  
+  i = nextKeyword(i, code);
+  
+  while (code->theText[i][0] != '}') {
+    
+    int star;
+    
+    startOfFunction = i;
+    
+    i = parseDataType(i, type, code);
+    
+    star = starCounter(&i, code);
+    
+    /*  i now points to the name*/
+    strcpy(name, code->theText[i]);
+    name[strlen(name)-1] = '\0';
+    
+    i = nextKeyword(i, code);
+    
+    if (code->theText[i][0] == ';') newStruct->varList = addToVarList(newStruct->varList, createVariable(name, type, star));
+    
+    else if (code->theText[i][0] == ',') {
+      
+      newStruct->varList = addToVarList(newStruct->varList, createVariable(name, type, star));
+      
+      i = nextKeyword(i, code);
+      
+      /*  multiple variable line delcaration*/
+      while(code->theText[i][0] != ';') {
+        
+        star = starCounter(&i, code);
+        
+        strcpy(name, code->theText[i]);
+        name[strlen(name)-1] = '\0';
+        
+        newStruct->varList = addToVarList(newStruct->varList, createVariable(name, type, star));
+        
+        i = nextKeyword(i, code);
+        if (code->theText[i][0] == ',') i = nextKeyword(i, code);
+      }
+    }
+    
+    else if (code->theText[i][0] == '(') {
+      
+      localFun *newFun = createFunction(name, type, star);
+      char functionPointer[510];
+      int displacement;
+      
+      i = nextKeyword(i, code);
+      
+      while (code->theText[i][0] != ')') {
+        
+        /*  block below handles all the logic of parsing */
+        i = parseDataType(i, type, code);
+        
+        star = starCounter(&i, code);
+        strcpy(name, code->theText[i]);
+        name[strlen(name)-1] = '\0';
+        
+        /*  iterator */
+        i = nextKeyword(i, code);
+        if (code->theText[i][0] == ',') i = nextKeyword(i, code); /*  get next significant keyword */
+        
+        /*  add to list */
+        newFun->parameterList = addToVarList(newFun->parameterList, createVariable(name, type, star));
+      }
+      
+      /*  save the function code */
+      i = openBracketIndex(i, code);
+      openBracket = i;
+      int closingBracketIndex = indexOfClosingBracket(code, openBracket);
+      endOfFunction = closingBracketIndex+1;
+      
+      newFun->code = saveCode(code, openBracket, closingBracketIndex);
+      newStruct->funList = addToFunList(newStruct->funList, newFun);
+      
+      deleteLines(code, startOfFunction, endOfFunction);
+      
+//      printf("startOfFunction: %d\n", startOfFunction); 
+//      printf("endOfFunction: %d\n", endOfFunction); 
+      
+      i = startOfFunction;
+      /*  after deleting the lines of code, the index is shifted and startOfFunction now points to the shifted endOfFunction */
+      
+      /*  write code to insert function pointer here */
+      createFunctionPointer(newFun, functionPointer, newStruct);
+      
+      displacement = code->numLines;
+      
+      insertFormatted (functionPointer, code, i);
+      
+      displacement = code->numLines - displacement;
+      
+/*      printf("displacement: %d\n", displacement); */
+      
+      i = startOfFunction + displacement - 1;
+      
+/*      printf("index: %d\n", i); */
+    }
+    
+    i = nextKeyword(i, code);
+  }
+}
+
+int insertCon(textInfo *code, structInfo *newStruct, int insertHere) {
+  
+  int startofconstruct;
+  int oldNumLines;
+  localFun *temp;
+  char *constructFun;
+  
+  temp = newStruct->funList;
+  startofconstruct = insertHere;
+  
+  oldNumLines = code->numLines;
+  
+  constructFun = constructor(newStruct);
+  
+  insertFormatted (constructFun, code, startofconstruct);
+  
+  free(constructFun);
+  
+  /* Inserting lines of code will always increase numLines */
+  startofconstruct = startofconstruct + (code->numLines - oldNumLines) + 2;
+  
+  printf("startofconstruct: %d\n", startofconstruct);
+  
+  return startofconstruct;
+}
+
+int insertFun(textInfo *code, structInfo *newStruct, int insertHere) {
+  
+    char *funCode;
+    funCode = temp->code;
+    char functionDec[100];
+    char star[10];
+    char name[50];
+    int i;
+
+    for (i = 0; i < temp->star; i++) strcat(star, "*");
+
+    functionName(temp, name, newStruct);
+
+//    printf("funName: %s\n", name);
+
+    sprintf(functionDec, "\n%s%s %s", temp->returnType, star, name);
+
+//    printf("functionDec: %s\n", functionDec);
+
+    oldNumLines = code->numLines;
+    insertFormatted (functionDec, code, startofconstruct);
+    startofconstruct = startofconstruct + (code->numLines - oldNumLines) + 2;
+
+    oldNumLines = code->numLines;
+    insert (funCode, code, startofconstruct);
+//    printf("old startofconstruct: %d\n", startofconstruct);
+    startofconstruct = startofconstruct + (code->numLines - oldNumLines) + 2;
+//    printf("new startofconstruct: %d\n", startofconstruct);
+
+    for (int i = 0; i < code->numLines; i++) {
+      printf("line %d: %s", i, code->theText[i]);
+    }
+    
+    temp = temp->next;
+  
+  return startofconstruct;
+}
+
+structInfo *classToStruct(textInfo *code, structInfo *structList) {
+  
+  char name[510];
+  int closingBracketIndex;
+  
+  for (int i = 0; i < code->numLines; i = nextKeyword(i, code)) {
+    
+    if (strcmp("class\n", code->theText[i]) == 0) {
+      
+/*      printf("match at  index: %d\n", i); */
+      
+      structInfo *newStruct;
+      int openBracket;
+      
+      code->theText[i] = realloc(code->theText[i], sizeof(char) * strlen("struct\n"));
+      strcpy(code->theText[i], "struct\n");
+      
+      i = nextKeyword(i, code);
+      
+/*      printf("index of keyword at  index: %d\n", i); */
+/*      printf("next keyword is: %s\n", code->theText[i]); */
+      
+      strcpy(name, code->theText[i]);
+      name[strlen(name)-1] = '\0';
+      
+      newStruct = createStruct(name);
+      
+      /* get the index of the opening bracket and corresponding closing bracket */
+      i = openBracketIndex(i, code);
+      openBracket = openBracketIndex(i, code);
+      closingBracketIndex = indexOfClosingBracket(code, i);
+      
+      parseStruct(code, i, closingBracketIndex, newStruct);
+      
+      structList = addToStructList(structList, newStruct);
+      
+      /*  inserts functions and constructors and updates index i */
+      i = indexOfClosingBracket(code, openBracket)+1;
+      i = insertCon(code, newStruct, i);
+    }
+    
+    else if (strcmp("main\n", code->theText[i]) == 0) {
+      return structList;
+    }
+  }
+  return structList;
+}
+
+//void mainParser(textInfo *code, structInfo *structList) {
+//  
+//  int i;
+//  i = 0;
+//  
+//  while ((strcmp("main\n", code->theText[i]) != 0)) {
+//    i = nextKeyword(i, code);
+//  }
+//
+//  
+//  
+//  }
+//}

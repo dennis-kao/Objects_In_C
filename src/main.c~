@@ -1,0 +1,41 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+
+#include "token.h"
+#include "storedList.h"
+#include "dynamicStringLib.h"
+
+int main () {
+  
+  FILE *input = fopen("testCases/basicClass.cc", "r");
+  FILE *tokenizedCode = fopen("intermediateFiles/tokenizedCode.c", "w");
+  textInfo *code = malloc(sizeof(textInfo));
+  structInfo *structList = NULL;
+  
+  tokenizeFile(input, tokenizedCode);
+  tokenizedCode = freopen("intermediateFiles/tokenizedCode.c", "r", tokenizedCode);
+  
+  char *formatString = changeToTokenizedFormat("inserted text bro!\n");
+  
+  if (input == NULL) {
+    printf("Could not open input file\n");
+    exit(1);
+  }
+  
+  storeText(tokenizedCode, code);
+  
+  structList = classToStruct(code, structList);
+  
+  for (int i = 0; i < code->numLines; i++) {
+    printf("line %d: %s", i, code->theText[i]);
+  }
+  
+  freeStoredText(code);
+  
+  destroyStructList(structList);
+  
+  fclose(tokenizedCode);
+  fclose(input);
+}
